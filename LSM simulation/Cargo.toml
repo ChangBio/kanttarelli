@@ -1,0 +1,32 @@
+[package]
+name = "tree_d"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+three-d = { version="0.15.*",path = "three-d", features=["egui-gui", "serde"] }
+#three-d-asset = {version="0.4.0",features = ["obj"] }
+three-d-asset = {git="https://github.com/asny/three-d-asset",features = ["obj","gltf"] }
+rand = "*"
+timeit = "*"
+serde = { version = "1.0.*", features = ["derive"] }
+serde-pickle = "1.0"
+rayon="*"
+tinyfiledialogs = "3.9.1"
+csv = "1.1"
+linya = "0.3.0"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+log = "0.4"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+console_error_panic_hook = "0.1"
+console_log = "0.2"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
