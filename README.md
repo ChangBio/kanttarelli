@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/633505761.svg)](https://zenodo.org/badge/latestdoi/633505761)
+
 # Code in "Tree architecture: Strigolactone-deficient mutant reveals connection between branching order and auxin gradient along tree stem"
 
 The repository hosts code related to our computational model and mathematical analysis. In addition it contains code used to generate the plots in the paper. 
