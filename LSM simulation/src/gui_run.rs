@@ -6,7 +6,10 @@ use three_d::*;
 
 
 use crate::{vec_tree::*, instance_data::*};
+
+#[cfg(not(target_arch = "wasm32"))]
 use tinyfiledialogs::save_file_dialog;
+
 #[derive(PartialEq)]
 enum PlotType { Auxin, PIN }
 
@@ -80,12 +83,18 @@ pub async fn run_gui_showcase() {
             "./assets/bud.glb",
             "./assets/segment.glb",
             "./assets/segment_branching.glb",
+            "https://fingal.github.io/assets/segment_branching1.glb",
+            "./assets/segment_branching2.glb",
         ]).await
     {
         loaded
     } else {
         three_d_asset::io::load_async(&[
-            "C:/Users/Andrzej/Documents/rust code/trees/tree_d/assets/cylinder.obj",
+            "https://fingal.github.io/assets/bud.glb",
+            "https://fingal.github.io/assets/segment.glb",
+            "https://fingal.github.io/assets/segment_branching.glb",
+            "https://fingal.github.io/assets/segment_branching1.glb",
+            "https://fingal.github.io/assets/segment_branching2.glb",
         ])
         .await
         .expect("failed to download the necessary assets, to enable running this example offline, place the relevant assets in a folder called 'assets' next to the three-d source")
@@ -392,6 +401,7 @@ pub async fn run_gui_showcase() {
                             });
                         }
                     }
+                    #[cfg(not(target_arch = "wasm32"))]{
                     if ui.button("save result").clicked(){
                         //let result=save_file_dialog("file location", "./");
                         if let Some(path) =save_file_dialog("file location", "./"){
@@ -407,6 +417,7 @@ pub async fn run_gui_showcase() {
                             }
                         }
                     }
+                }
                 });
                 panel_width = gui_context.used_rect().width() as f64;
             },
