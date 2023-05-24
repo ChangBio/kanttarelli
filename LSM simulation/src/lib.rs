@@ -1,22 +1,29 @@
-#![cfg_attr(docsrs, feature(doc_cfg))]
-//#![warn(clippy::all)]
-#![warn(missing_docs)]
-#![warn(unsafe_code)]
-//!
-//! A 3D renderer which enables out-of-the-box build to both desktop and web with the same code.
-//! See the [README](https://crates.io/crates/three-d) for more information and
-//! the [examples](https://github.com/asny/three-d/tree/master/examples) for how to use it.
-//!
 
-pub mod context;
+#[cfg(target_arch = "wasm32")]
+mod main;
+#[cfg(target_arch = "wasm32")]
+mod vec_tree;
+#[cfg(target_arch = "wasm32")]
+mod instance_data;
+#[cfg(target_arch = "wasm32")]
+mod model_functions;
+#[cfg(target_arch = "wasm32")]
+mod gui_run;
 
-pub mod core;
+// Entry point for wasm
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
 
-pub mod renderer;
-pub use renderer::*;
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(start)]
+pub async fn start() -> Result<(), JsValue> {
+    console_log::init_with_level(log::Level::Debug).unwrap();
 
-pub mod window;
-pub use window::*;
+    use log::info;
+    info!("Logging works!");
+    info!("eeeeee");
 
-mod gui;
-pub use gui::*;
+    std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+    gui_run::run_gui_showcase().await;
+    Ok(())
+}

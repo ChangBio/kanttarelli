@@ -7,8 +7,8 @@ use crate::vec_tree::*;
 
 fn segment_color(max_color:Color,auxin_level: f32, render_params:&RenderParams) -> Color{
     let white = vec3(1.,1.,1.);
-    //let blue = vec3(0.0,0.,1.);
-    let blue: Vec3 = max_color.to_vec3();
+    let blue = vec3(0.0,0.,1.);
+    //let blue: Vec3 = max_color.to_vec3();
     //println!("{blue:?}");
     let maximum=render_params.auxin_max;
     let coeff = (auxin_level.clamp(0., maximum)/maximum).powf(render_params.color_exp);
