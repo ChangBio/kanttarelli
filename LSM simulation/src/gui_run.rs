@@ -21,14 +21,18 @@ pub fn distance_direction(pos: Vector3<f32>, direction: Vector3<f32>,other: Vect
     let dist = direction.cross(other_dir).magnitude()*magnitude;
     (dist,magnitude)
 }
-pub fn generate_trees_showcase(distance:f32)-> Vec<Tree>{
+pub fn generate_trees_showcase(distance:f32, decapitated: bool)-> Vec<Tree>{
     let settings = Settings::global_copy();
     
     let mut trees = vec![];
 
     let d = distance;
-    
-    let mut tree = rnai60(&settings);
+    let mut tree=if decapitated{
+         rnai60_decapitated(&settings)
+    }
+    else{
+        rnai60(&settings)
+    };
     tree.transformation = Mat4::from_translation(vec3(d,0.,d));
 
     // let branching_angle = PI*0.1;
@@ -39,7 +43,13 @@ pub fn generate_trees_showcase(distance:f32)-> Vec<Tree>{
 
     trees.push(tree);
 
-    let mut tree = wild_type_week_11(&settings);
+    //let mut tree = wild_type_week_11(&settings);
+    let mut tree=if decapitated{
+        wild_decapitated_week_11(&settings)
+    }
+    else{
+        wild_type_week_11(&settings)
+    };
     tree.transformation = Mat4::from_translation(vec3(-d,0.,-d));
 
     // let branching_angle = PI*0.4;
@@ -103,9 +113,10 @@ pub async fn run_gui_showcase() {
     let nodes =0;
     let mut initial_size = 20;
     let prob = 0.75;
+    let mut decapitated = false;
     //let mut tree = pole(40);
     //let mut tree = wild_type_week_11();
-    let mut trees = generate_trees_showcase(80.);
+    let mut trees = generate_trees_showcase(80.,decapitated);
     
     // for i in 1..tree.get_size(){
     //     println!("{} {}",tree.nodes[i].main_child,tree.nodes[i].secondary_child);
@@ -337,6 +348,18 @@ pub async fn run_gui_showcase() {
 
 
                     ui.checkbox(&mut render_params.render_buds, "Show buds");
+                    if ui.checkbox(&mut decapitated, "Decapitated").clicked() {
+                        simulation_step=0;
+                        let settings = Settings::global_copy();
+                        SETTINGS.lock().unwrap().active_gain=active_gain.parse::<f32>().unwrap_or(settings.active_gain);
+                        SETTINGS.lock().unwrap().dormant_gain=dormant_gain.parse::<f32>().unwrap_or(settings.dormant_gain);
+                        SETTINGS.lock().unwrap().decay=decay.parse::<f32>().unwrap_or(settings.decay);
+                        SETTINGS.lock().unwrap().pin_decay=pin_decay.parse::<f32>().unwrap_or(settings.pin_decay);
+                        SETTINGS.lock().unwrap().pin_production=(pin_production_1.parse::<f32>().unwrap_or(settings.pin_production.0),pin_production_2.parse::<f32>().unwrap_or(settings.pin_production.1));
+
+                        trees = generate_trees_showcase(80.,decapitated);
+
+                    };
                     let response = ui.add(egui::Slider::new(&mut render_params.auxin_max, 0. ..=2.));
                     let response = ui.add(egui::Slider::new(&mut render_params.color_exp, 0. ..=1.));
                     let response = ui.add(egui::Slider::new(&mut render_params.initial_width, 0. ..=3.));
@@ -356,7 +379,7 @@ pub async fn run_gui_showcase() {
                         SETTINGS.lock().unwrap().pin_decay=pin_decay.parse::<f32>().unwrap_or(settings.pin_decay);
                         SETTINGS.lock().unwrap().pin_production=(pin_production_1.parse::<f32>().unwrap_or(settings.pin_production.0),pin_production_2.parse::<f32>().unwrap_or(settings.pin_production.1));
 
-                        trees = generate_trees_showcase(80.);
+                        trees = generate_trees_showcase(80.,decapitated);
                     }
                     ui.checkbox(&mut show_plot, "Show plots");
                     if show_plot{
@@ -411,7 +434,7 @@ pub async fn run_gui_showcase() {
                                 let mut wtr = Writer::from_path(format!("{path} {name}.csv")).unwrap();
                                 wtr.write_record(&["internode","Auxin","PIN"]).unwrap();
                                 for (i,(a,b)) in values.iter().enumerate(){
-                                    wtr.write_record(&[format!("{}",(i as i32 + tree.settings.segments_amount-tree.nodes[tree.tip_index as usize].segments.len() as i32-1)/tree.settings.segments_amount+1),format!("{a:.5}"),format!("{b:.5}")]).unwrap();
+                                    wtr.write_record(&[format!("{}",(i as i32 + tree.settings.segments_amount-tree.nodes[tree.get_oringal_tip_index() as usize].segments.len() as i32-1)/tree.settings.segments_amount+1),format!("{a:.5}"),format!("{b:.5}")]).unwrap();
                                 }
                                 wtr.flush().unwrap();
                             }

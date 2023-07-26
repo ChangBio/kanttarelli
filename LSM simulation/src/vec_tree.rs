@@ -66,12 +66,12 @@ pub static SETTINGS: Mutex<Settings> = Mutex::new(Settings{
     init_auxin: 0.,
     init_strigolactin: 0.,
     init_pin: 1.,
-    dormant_gain: 0.25,
-    active_gain: 0.5,
-    decay: 0.15,
+    dormant_gain: 0.12,
+    active_gain: 0.7,
+    decay: 0.155,
     pin_decay: 0.05,
     segment_gain: 0.0,
-    pin_production: (1.0,0.02),
+    pin_production: (1.0,0.06),
     dt: 0.01,
 });
 impl Settings{
@@ -88,12 +88,12 @@ impl Default for Settings {
             init_auxin: 0.,
             init_strigolactin: 0.,
             init_pin: 1.,
-            dormant_gain: 0.25,
-            active_gain: 0.5,
-            decay: 0.15,
+            dormant_gain: 0.12,
+            active_gain: 0.7,
+            decay: 0.155,
             pin_decay: 0.05,
-            pin_production: (1.0,0.02),
             segment_gain: 0.0,
+            pin_production: (1.0,0.06),
             dt: 0.01,
         }
     }
@@ -142,11 +142,12 @@ impl Segment{
     }
 }
 
-#[derive(Serialize, Deserialize,Clone,Debug)]
+#[derive(Serialize, Deserialize,Clone,Debug,PartialEq)]
 pub enum BudState{
     DormantBud,
     ActiveBud,
     BranchingSegment,
+    DecapitatedSegment
 }
 #[derive(Serialize, Deserialize,Clone)]
 pub struct Node {
@@ -154,6 +155,7 @@ pub struct Node {
     pub index: i32,
     pub parent: i32,
     pub order: i32,
+    pub initial_order: i32,
     pub main_child: i32,
     pub secondary_child: i32,
     pub data: Data,
@@ -165,11 +167,13 @@ pub struct Node {
 }
 impl Node{
     pub fn new(index:i32, parent: i32,order: i32,segments_amount:i32,bud_state: BudState,settings: Settings) -> Node{
+        let initial_order = order;
         Node{
             bud_state,
             index,
             parent,
             order,
+            initial_order,
             main_child:-1,
             secondary_child:-1,
             data: Data::new(order,settings.init_auxin, settings.init_pin),
@@ -232,9 +236,13 @@ impl Node{
             BudState::ActiveBud => {
                 self.settings.active_gain
             }
+            BudState::DecapitatedSegment => {
+                0.
+            }
             BudState::BranchingSegment => {
                 return Err(());
             }
+
         };
         self.segment_flow(old_node);
         self.data.auxin_update(dt*(outflow(&old_node.data)+production(&old_node.data,gain)+decay(&old_node.data,&self.settings)));
@@ -252,6 +260,9 @@ impl Node{
             BudState::ActiveBud => {
                 return Err(());
             }
+            BudState::DecapitatedSegment => {
+                return Err(());
+            }
             BudState::BranchingSegment => {}
         };
         self.segment_flow(&old_node);
@@ -259,6 +270,12 @@ impl Node{
         self.data.pin_update(dt*(pin_production(&old_node.data,&self.settings)+pin_decay(&old_node.data,&self.settings)));
         self.data.auxin_flow=-outflow(&old_node.data);
         Ok(())
+    }
+
+    fn decapitate(&mut self) -> () {
+        if self.bud_state!=BudState::BranchingSegment{
+            self.bud_state=BudState::DecapitatedSegment;
+        }
     }
 
 }
@@ -282,7 +299,9 @@ pub struct TreeRenderData{
 }
 #[derive(Serialize, Deserialize,Clone)]
 pub struct Tree{
-    pub tip_index: i32,
+    //pub tip_index: i32,
+    pub tip_indices: Vec<i32>,
+    pub decapitated_tip_index: Option<i32>,
     pub segments_amount: i32,
     #[serde(with = "Matrix4Def")]
     pub transformation: Mat4,
@@ -297,7 +316,8 @@ impl Tree{
         let mut main =Node::new(0, -1, 0,segments_amount,BudState::ActiveBud,settings.clone());
         main.secondary_child=1;
         Tree{
-            tip_index:0,
+            tip_indices:vec![0],
+            decapitated_tip_index:None,
             segments_amount,
             transformation: Mat4::identity(),
             settings:settings.clone(),
@@ -329,6 +349,21 @@ impl Tree{
             }
         }
     }
+    fn get_tip_index(&self) -> (i32,usize){
+        if self.tip_indices.len()==1{
+            return (self.tip_indices[0],0)
+        }
+        let index = rand::thread_rng().gen_range(0..self.tip_indices.len());
+        return (self.tip_indices[index],index)
+    }
+    pub fn get_oringal_tip_index(&self) -> i32{
+        if self.tip_indices.len()==1{
+            return self.tip_indices[0]
+        }
+        else{
+            return self.decapitated_tip_index.unwrap();
+        }
+    }
 
     fn cache_index(&mut self, index: usize,order:usize){
         while order>=self.orders_indexed.len(){
@@ -337,8 +372,163 @@ impl Tree{
         self.orders_indexed[order].push(index);
     }
     pub fn extend_main(&mut self){
-        let new_index = self.nodes.len() as i32;
-        self.extend_node(self.tip_index as usize);
+        self.extend_node(self.get_tip_index().0 as usize);
+    }
+    pub fn find_main_tip(&self, node_index: i32)-> i32{
+        let mut tip = node_index;
+        while self.nodes[tip as usize].bud_state==BudState::BranchingSegment{
+            tip = self.nodes[tip as usize].main_child;
+        }
+        return  tip;
+    }
+    fn recursive_decapitation(&mut self, index:i32){
+        self.nodes[index as usize].decapitate();
+        if self.nodes[index as usize].main_child>0{
+            self.recursive_decapitation(self.nodes[index as usize].main_child);
+        }
+        if self.nodes[index as usize].secondary_child>0{
+            self.recursive_decapitation(self.nodes[index as usize].secondary_child);
+        }
+
+    }
+    pub fn decapitate_main(&mut self){
+        let (tip_intex,index_of_tip_index) = self.get_tip_index();
+        self.nodes[tip_intex as usize].decapitate();
+        self.decapitated_tip_index = Some(tip_intex);
+        let parent_node = self.nodes[tip_intex as usize].parent as usize;
+        let first_tip = self.find_main_tip(self.nodes[parent_node].secondary_child);
+        let grand_parent_node = self.nodes[parent_node].parent as usize;
+        let second_tip = self.find_main_tip(self.nodes[grand_parent_node].secondary_child);
+
+        self.activate(first_tip as usize);
+        self.activate(second_tip as usize);
+        //TODO reorder nodes
+        //TODO turn geting tip_index to function
+        self.tip_indices.remove(index_of_tip_index);
+        self.tip_indices.push(first_tip); 
+        self.tip_indices.push(second_tip);
+        self.decrease_order(first_tip);
+        self.decrease_order(second_tip);
+    }
+    pub fn decapitate_lowest_branches(&mut self, number: usize,skip: usize,decapitated_segments:i32){
+        let mut node_index = 0;
+        for _ in 0..(skip){
+            if self.nodes[node_index].main_child>=0{
+                node_index = (self.nodes[node_index].main_child as usize);
+            }
+        }
+        for _ in 0..(number){
+            let mut decapitation = self.find_main_tip(self.nodes[node_index].secondary_child);
+            let mut i =0;
+
+            
+            while (i<decapitated_segments) && self.nodes[self.nodes[decapitation as usize].parent as usize].order!=0 && (self.nodes[self.nodes[self.nodes[decapitation as usize].parent as usize].parent as usize].order!=0){
+                decapitation=self.nodes[decapitation as usize].parent;
+                i+=1;
+            }   
+
+            if (self.nodes[self.nodes[decapitation as usize].parent as usize].order==0){
+                continue;
+            }
+            self.recursive_decapitation(decapitation);
+            let new_branch = self.nodes[self.nodes[decapitation as usize].parent as usize].secondary_child;
+            let new_branch_tip = self.find_main_tip(new_branch);
+            self.activate(new_branch_tip as usize);
+            self.decrease_order(new_branch);
+
+
+
+
+
+            node_index= (self.nodes[node_index].main_child as usize);
+        }
+    }
+
+    pub fn decapitate_random_order_1(&mut self, number: usize) -> Result<(),()>{
+        let mut new_tips = vec![];
+        let order = 1;
+        let mut iterations = 0;
+        if order>self.orders_indexed.len(){ return Err(());}
+        let free = self.orders_indexed[order].iter().filter(|&x|
+            match self.nodes[*x].bud_state{
+                BudState::ActiveBud => {true},
+                _ => {false},
+            });
+        if free.count()<number{
+            return Err(());
+        }
+        while new_tips.len()<number{
+            iterations+=1;
+            if iterations>100{
+                break;
+            }
+            let free = self.orders_indexed[order].iter().filter(|&x|
+                match self.nodes[*x].bud_state{
+                    BudState::ActiveBud => {true},
+                    _ => {false},
+                });
+            let mut rng = rand::thread_rng();
+            let _index=free.choose(&mut rng);
+            match _index{
+                None =>{
+                    return Err(());
+                }
+                Some(index)=>{
+                    let parent_node = self.nodes[*index].parent as usize;
+                    let first_tip = self.nodes[parent_node].secondary_child;
+                    let grand_parent_node = self.nodes[parent_node].parent as usize;
+                    let second_tip = self.nodes[grand_parent_node].secondary_child;
+
+                    if (self.nodes[grand_parent_node].order==0){
+                        continue;
+                    }
+                    self.recursive_decapitation(*index as i32);
+                    //self.nodes[*index].decapitate();
+                    //self.nodes[first_tip as usize].decapitate();
+            
+                    self.activate(second_tip as usize);
+                    //TODO reorder nodes
+                    //TODO turn geting tip_index to function
+                    new_tips.push(second_tip);
+                }
+            }      
+        }
+        for i in new_tips{
+            self.decrease_order(i);
+        }
+        Ok(())
+    }
+
+    fn decrease_order(&mut self, _index:i32){
+        let mut index = _index;
+        let order = self.nodes[index as usize].order;
+        let mut parent = self.nodes[index as usize].parent;
+        while parent>0 && self.nodes[parent as usize].order==order{
+            index = parent;
+            parent = self.nodes[index as usize].parent;
+        }
+        //let node = &self.nodes[index as usize];
+        for x in &mut self.nodes[index as usize].segments{
+            x.data.order-=1;
+        }
+        //println!("decrasing order of {:?}",index);
+        //println!("{:?}",self.nodes[index as usize].order);
+        //println!("{:?}",self.orders_indexed[self.nodes[index as usize].order as usize]);
+        self.orders_indexed[self.nodes[index as usize].order as usize].retain(|&x| x != index as usize);
+
+        //println!("{:?}",self.orders_indexed[self.nodes[index as usize].order as usize]);
+
+        self.nodes[index as usize].order-=1;
+        self.nodes[index as usize].data.order-=1;
+
+        self.orders_indexed[(self.nodes[index as usize].order) as usize].push(index as usize);
+
+        if self.nodes[index as usize].main_child>0{
+            self.decrease_order(self.nodes[index as usize].main_child);
+        }
+        if self.nodes[index as usize].secondary_child>0{
+            self.decrease_order(self.nodes[index as usize].secondary_child);
+        }
     }
     fn add_main_node(&mut self, node_index:usize) ->Result<(),&'static str>{
         let mut curr_index = node_index;
@@ -352,9 +542,9 @@ impl Tree{
                 self.nodes.push(Node::new(new_index+1, new_index as i32, self.nodes[curr_index].order+1,self.segments_amount,BudState::DormantBud,self.settings.clone()));
                 self.nodes[new_index as usize].secondary_child = new_index+1;
                 self.nodes[curr_index].main_child=new_index;
-                if self.tip_index==curr_index as i32{
-                    self.tip_index=new_index;
-                }
+                if let Some(index) = self.tip_indices.iter().position(|&x| x == curr_index as i32) {
+                    self.tip_indices[index]=new_index;
+                } 
                 self.cache_index(new_index as usize,self.nodes[curr_index].order as usize);
                 self.cache_index((new_index+1) as usize,(self.nodes[curr_index].order+1) as usize);
                 return Ok(());
@@ -474,7 +664,7 @@ impl Tree{
                 base_transformation*translation;
             }
             if secondary_child!=-1{
-                let s = initial_width/((self.nodes[i].order as f32)*order_width_influence+1.)*0.8;
+                let s = initial_width/((self.nodes[i].initial_order as f32)*order_width_influence+1.)*0.8;
                 let mut distance= segment_length*(self.nodes[i].segments.len()) as f32;
                 if main_child!=-1{distance+=segment_length;}
                 let translation=Mat4::from_translation(Vector3 { x: 0., y: distance, z: 0. });
@@ -486,7 +676,7 @@ impl Tree{
             }
         }
         for i in 0..self.get_size(){
-            let s = initial_width/((self.nodes[i].order as f32)*order_width_influence+1.);
+            let s = initial_width/((self.nodes[i].initial_order as f32)*order_width_influence+1.);
             self.nodes[i].transformation=self.nodes[i].transformation*Mat4::from_nonuniform_scale(s,1.,s);
         }
     }
@@ -502,6 +692,9 @@ impl Tree{
                     }
                 },
                 BudState::ActiveBud => {
+                    node.gain_flow(&old_tree.nodes[i]);
+                },
+                BudState::DecapitatedSegment => {
                     node.gain_flow(&old_tree.nodes[i]);
                 },
                 BudState::BranchingSegment =>{
@@ -547,7 +740,7 @@ impl Tree{
     pub fn main_stem_values(&self) -> Vec<(f32,f32)>{
         let mut result =vec![];
 
-        let mut index = self.tip_index;
+        let mut index = self.get_oringal_tip_index();
         while index !=-1{
             result.push((self.nodes[index as usize].data.auxin,self.nodes[index as usize].data.pin));
             for segment in self.nodes[index as usize].segments.iter().rev(){
@@ -557,6 +750,20 @@ impl Tree{
             index=self.nodes[index as usize].parent;
         }
         result
+    }
+    pub fn recalculate_initial_order(&mut self){
+        self.recalculate_initial_order_recursive(0,0);
+    }
+
+
+    pub fn recalculate_initial_order_recursive(&mut self,index: i32,order:i32){
+        self.nodes[index as usize].initial_order=order;
+        if self.nodes[index as usize].main_child>0{
+            self.recalculate_initial_order_recursive(self.nodes[index as usize].main_child,order);
+        }
+        if self.nodes[index as usize].secondary_child>0{
+            self.recalculate_initial_order_recursive(self.nodes[index as usize].secondary_child,order+1);
+        }
     }
 }
 impl std::fmt::Debug for Tree {
@@ -600,6 +807,46 @@ pub fn wild_type_week_11(_settings: &Settings) -> Tree{
         tree.extend_main();
         }
     }
+
+    tree
+}
+pub fn wild_decapitated_week_11(_settings: &Settings) -> Tree{
+    let mut settings = _settings.clone();
+    settings.segments_amount=6;
+    let mut tree = Tree::new(&settings);
+    for _ in 0..10{
+        tree.extend_main();
+    }
+    for i in 0..25{
+        if i == 8{
+            tree.decapitate_main();
+            settings.segments_amount+=1;
+            tree.new_settings(settings.clone())
+            //tree.decapitate_random_order_1(5);
+            //return tree;
+        }
+        if i==20{
+            tree.decapitate_lowest_branches(5, 1, 3);
+        }
+        tree.activate_random_with_order(1);
+        let do_it :f32 =random();
+        if do_it<0.45 {tree.activate_random_with_order(1);}
+
+        //let order_extension = if i<8 {3*(i)+12} else {3*i-8};
+        let order_extension = if i<20 {(3*i)} else {(2.5*i as f32).floor() as i32};
+        //let mul=3;
+        for _ in 0..order_extension{
+        tree.extend_random_with_order(1);
+        }
+        // if i==10{
+        //     settings.segments_amount+=1;
+        //     tree.new_settings(settings.clone())
+        // }
+        for _ in 0..5{
+        tree.extend_main();
+        }
+    }
+    tree.recalculate_initial_order();
 
     tree
 }
@@ -650,6 +897,47 @@ pub fn rnai60(_settings: &Settings) -> Tree{
         tree.extend_main();
         }
     }
+    tree
+}
+pub fn rnai60_decapitated(_settings: &Settings) -> Tree{
+    let mut settings = _settings.clone();
+    settings.segments_amount=4;
+    let mut tree = Tree::new(&settings);
+    for _ in 0..(settings.segments_amount-1)*2{
+        tree.extend_main();
+    }
+    for i in 0..25{
+        tree.activate_random_with_order(1);
+        if i>4{
+            let do_it :f32 =random();
+            if do_it<0.5 {tree.activate_random_with_order(2);}
+            for _ in 0..(0.5*i as f32).ceil() as i32{
+                tree.extend_random_with_order(2);
+            }
+        }
+        if i == 8{
+            tree.decapitate_main();
+            //settings.segments_amount+=1;
+            //tree.new_settings(settings.clone())
+            //tree.decapitate_random_order_1(5);
+            //return tree;
+        }
+        if i==20{
+            tree.decapitate_lowest_branches(5, 1, 3);
+        }
+        // if i==10{
+        //     settings.segments_amount+=1;
+        //     tree.new_settings(settings.clone())
+        // }
+        let times = if random::<f32>()<0.6{ 3 } else{2};
+        for _ in 0..times*i{
+        tree.extend_random_with_order(1);
+        }
+        for _ in 0..(settings.segments_amount-1){
+        tree.extend_main();
+        }
+    }
+    tree.recalculate_initial_order();
     tree
 }
 pub fn kanttarelli_week_11(_settings: &Settings) -> Tree{

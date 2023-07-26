@@ -75,7 +75,7 @@ impl IntancesData{
         for i in 0..tree.get_size(){
             let mut transformation = tree.transformation*tree.nodes[i].transformation;    
 
-            let s = render_params.initial_width/((tree.nodes[i].order as f32)*render_params.order_width_influence+1.);
+            let s = render_params.initial_width/((tree.nodes[i].initial_order as f32)*render_params.order_width_influence+1.);
             //let width_transformation = Mat4::from_nonuniform_scale(s,1.,s);
 
        
@@ -96,6 +96,10 @@ impl IntancesData{
                 BudState::ActiveBud => {
                     bud_transformations.push(transformation*Mat4::from_angle_x(radians(PI/2.)));
                     bud_colors.push(Color::from_rgb_slice(&[0.,1.,0.]));
+                },
+                BudState::DecapitatedSegment => {
+                    bud_transformations.push(transformation*Mat4::from_angle_x(radians(PI/2.)));
+                    bud_colors.push(Color::from_rgb_slice(&[0.,0.,0.]));
                 },
                 BudState::DormantBud => {
                     bud_transformations.push(transformation*Mat4::from_angle_x(radians(PI/2.)));
