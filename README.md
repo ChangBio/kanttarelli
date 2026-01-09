@@ -11,7 +11,3 @@ This folder contains the LSM model simulation implemented in Rust. It was develo
 Demo is also avaliable under [link](https://fingal.github.io/LSM/index.html).
 
 Visualization aspect of the application is based on a fork of three_d libary that is part of the repository.
-
-
-# Publication DOI: https://doi.org/10.1073/pnas.2308587120
-
